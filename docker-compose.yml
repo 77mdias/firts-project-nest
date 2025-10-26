@@ -1,0 +1,52 @@
+version: "3.8"
+
+services:
+  front:
+    build: ./front
+    container_name: front-app
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./front:/app
+      - /app/node_modules
+    depends_on:
+      - back
+    environment:
+      - NODE_ENV=development
+    # Se usar .env na pasta front, descomente:
+    # env_file:
+    #   - ./front/.env.development
+
+  back:
+    build: ./back
+    container_name: back-app
+    ports:
+      - "3001:3001"
+      - "5555:5555"
+    volumes:
+      - ./back:/app
+      - /app/node_modules
+
+    environment:
+      - NODE_ENV=development
+    # Se usar .env na pasta back, descomente:
+    env_file:
+      - ./back/.env.development
+
+# Para SQLite, apenas o volume acima basta.
+# Para PostgreSQL adicione abaixo e ajuste o Prisma:
+# db:
+#   image: postgres:15
+#   container_name: postgres-db
+#   environment:
+#     POSTGRES_USER: postgres
+#     POSTGRES_PASSWORD: postgres
+#     POSTGRES_DB: appdb
+#   ports:
+#     - "5432:5432"
+#   volumes:
+#     - db_data_pg:/var/lib/postgresql/data
+
+volumes:
+  db_data:
+  # db_data_pg: # Use se adicionar PostgreSQL

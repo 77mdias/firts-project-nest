@@ -1,0 +1,28 @@
+# Node
+node_modules/
+npm-debug.log*
+
+# Build
+.next/
+dist/
+out/
+coverage/
+
+# SQLite data
+db_data/
+
+# Env files
+.env
+.env.local
+.env.production
+back/.env
+back/.env.production
+front/.env
+front/.env.production
+!*.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+.github/
