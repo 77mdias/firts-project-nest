@@ -155,6 +155,88 @@ back/src/
 - Database: SQLite (dev/test), PostgreSQL (production)
 - Environment files: `.env.development`, `.env.test`, `.env.production`
 
+### Frontend (Next.js)
+
+**Architecture Overview:**
+
+This is a Next.js 16 App Router application with TypeScript, Tailwind CSS v4, and React 19. The frontend implements client-side authentication with localStorage token persistence and React Context for state management.
+
+**Key Features:**
+- Client-side authentication with token storage
+- Protected routes via Next.js middleware
+- React Context for global auth state
+- Type-safe API client with error handling
+- Responsive UI with Tailwind CSS v4
+
+**File Organization:**
+```
+front/src/
+├── app/
+│   ├── layout.tsx              # Root layout with AuthProvider
+│   ├── page.tsx                # Home/landing page
+│   ├── login/page.tsx          # Login page
+│   ├── register/page.tsx       # Register page
+│   └── dashboard/page.tsx      # Protected dashboard
+├── components/
+│   ├── Providers.tsx           # Client-side provider wrapper
+│   └── InputField.tsx          # Reusable form input component
+├── contexts/
+│   └── AuthContext.tsx         # Authentication state management
+├── lib/
+│   └── api.ts                  # API client (fetch wrapper)
+├── types/
+│   └── auth.ts                 # TypeScript interfaces
+└── middleware.ts               # Route protection logic
+```
+
+**Authentication Flow:**
+
+1. **Token Storage**
+   - Access token: Stored in localStorage (`accessToken`)
+   - Refresh token: Stored in localStorage (`refreshToken`)
+   - User data: Stored in localStorage (`user`) as JSON
+   - Note: Also sets cookies for middleware checks (optional enhancement)
+
+2. **AuthContext (`contexts/AuthContext.tsx`)**
+   - Manages authentication state (user, tokens, loading)
+   - Provides methods: `login()`, `register()`, `logout()`, `refreshAuth()`
+   - Auto-loads auth state from localStorage on mount
+   - Validates tokens by calling `/auth/me` endpoint
+   - Automatically attempts token refresh on validation failure
+
+3. **Route Protection (`middleware.ts`)**
+   - Protected routes: `/dashboard`, `/content`, `/users`
+   - Auth-only routes: `/login`, `/register` (redirect to dashboard if authenticated)
+   - Checks for `accessToken` cookie (middleware can't access localStorage)
+   - Redirects unauthenticated users to `/login?redirect=<original-path>`
+
+4. **API Client (`lib/api.ts`)**
+   - Centralized fetch wrapper with error handling
+   - Methods: `login()`, `register()`, `refreshToken()`, `logout()`, `getMe()`
+   - `authenticatedRequest()` helper for protected endpoints
+   - Configurable base URL via `NEXT_PUBLIC_API_URL`
+
+**Key Patterns:**
+
+1. **Client Components with "use client"**
+   - Required for components using React hooks (useState, useEffect, useContext)
+   - All pages and components that use AuthContext must be client components
+
+2. **Type Safety**
+   - All API requests/responses typed via `types/auth.ts`
+   - Interfaces: `User`, `LoginRequest`, `LoginResponse`, `RefreshTokenRequest`, etc.
+
+3. **Error Handling**
+   - API client throws errors with descriptive messages
+   - Components should wrap auth methods in try-catch blocks
+   - Failed token refresh triggers logout and clears state
+
+**Configuration:**
+- Port: 3000
+- API URL: http://localhost:3001 (configurable via `NEXT_PUBLIC_API_URL`)
+- React Compiler: Enabled (babel-plugin-react-compiler)
+- Webpack: Explicitly enabled in dev/build scripts
+
 ## Authentication & Authorization
 
 ### JWT Tokens
@@ -362,6 +444,8 @@ NEXT_PUBLIC_API_URL=http://localhost:3001
 
 ## Key Notes
 
+### Backend
+
 1. **Repository Pattern** - Always create abstract repository interface first, then Prisma implementation
 2. **Module Registration** - New modules must be imported in `AppModule`
 3. **Guards Order** - Apply `JwtAuthGuard` before `RolesGuard` (guards execute in order)
@@ -369,9 +453,87 @@ NEXT_PUBLIC_API_URL=http://localhost:3001
 5. **Environment Variables** - Access via `process.env.*`, with fallback defaults for type safety
 6. **Prisma Generate** - Run after schema changes; `start:dev` includes it automatically
 7. **SQLite vs PostgreSQL** - Change `provider` in schema.prisma for production (SQLite → postgresql)
-8. **Token Storage** - Refresh tokens stored in DB for revocation; access tokens are stateless
+8. **Token Storage (Backend)** - Refresh tokens stored in DB for revocation; access tokens are stateless
 9. **Permission Checks** - Content service checks permissions in business logic, not just at guard level
 10. **Password Hashing** - Uses bcryptjs with salt rounds of 10
+
+### Frontend
+
+1. **"use client" Directive** - Required at top of any file using React hooks or browser APIs (useState, useEffect, localStorage, etc.)
+2. **Middleware Limitation** - Next.js middleware runs on edge runtime and cannot access localStorage. Current implementation checks cookies as a workaround. For production, consider:
+   - Setting httpOnly cookies on login/refresh (requires backend changes)
+   - OR accept that middleware only provides basic protection (client-side AuthContext provides actual security)
+3. **Token Refresh** - AuthContext automatically attempts token refresh when access token validation fails. Components should handle auth errors gracefully.
+4. **Type-First Development** - Always update `types/auth.ts` before implementing new API methods
+5. **API Client Extensions** - Use `apiClient.authenticatedRequest()` for new protected endpoints instead of duplicating auth header logic
+6. **Protected Pages** - New protected pages must be added to `protectedRoutes` array in `middleware.ts`
+7. **Environment Variables** - Only variables prefixed with `NEXT_PUBLIC_` are exposed to the browser (e.g., `NEXT_PUBLIC_API_URL`)
+8. **SSR Considerations** - Authentication state is client-only. Use `isLoading` state from AuthContext before rendering protected content to avoid hydration mismatches
+
+## Common Development Workflows
+
+### Adding a New Protected API Endpoint (Backend)
+
+1. Create DTO in appropriate module's `dtos/` folder
+2. Add method to repository interface and Prisma implementation
+3. Add method to service with permission checks
+4. Add endpoint to controller with appropriate guards:
+   ```typescript
+   @UseGuards(JwtAuthGuard, RolesGuard)
+   @Roles(Role.ADMIN)
+   ```
+5. Test endpoint with seeded user credentials
+
+### Adding a New Protected Page (Frontend)
+
+1. Create page component in `app/<route>/page.tsx`
+2. Add `"use client"` directive if using hooks
+3. Use `useAuth()` hook to access authentication state
+4. Add route to `protectedRoutes` array in `middleware.ts`
+5. Handle loading state while auth initializes:
+   ```typescript
+   const { isLoading, isAuthenticated } = useAuth();
+   if (isLoading) return <div>Loading...</div>;
+   ```
+
+### Making Authenticated API Requests (Frontend)
+
+1. Add TypeScript interfaces to `types/auth.ts` (or create new type file)
+2. Add method to `ApiClient` class in `lib/api.ts`:
+   ```typescript
+   async getResource(accessToken: string, id: string) {
+     return this.authenticatedRequest<Resource>(`/resource/${id}`, accessToken);
+   }
+   ```
+3. Use in components via `useAuth()`:
+   ```typescript
+   const { accessToken } = useAuth();
+   const data = await apiClient.getResource(accessToken!, id);
+   ```
+
+### Database Schema Changes
+
+1. Edit `back/prisma/schema.prisma`
+2. Run `npx prisma migrate dev --name <description>` (creates migration)
+3. Prisma client auto-generates on `npm run start:dev`
+4. Update repository interfaces and implementations
+5. Run `npx prisma db seed` to refresh test data if needed
+
+### Running Tests
+
+```bash
+# Backend unit tests
+cd back && npm run test
+
+# Backend E2E tests
+cd back && npm run test:e2e
+
+# Watch mode for TDD
+cd back && npm run test:watch
+
+# Coverage report
+cd back && npm run test:cov
+```
 
 ## Production Deployment
 
@@ -384,3 +546,4 @@ For production with PostgreSQL:
 5. Seed production data if needed
 6. Set secure JWT secrets (min 32 characters)
 7. Enable HTTPS and update CORS origins
+8. Consider implementing httpOnly cookies for token storage (more secure than localStorage)
